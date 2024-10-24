@@ -13,11 +13,3 @@ pub(crate) const fn is_hug_parens_with_braces_and_square_brackets_enabled(
 ) -> bool {
     context.is_preview()
 }
-
-/// Returns `true` if implicitly concatenated strings should be joined if they all fit on a single line.
-/// See [#9457](https://github.com/astral-sh/ruff/issues/9457)
-/// WARNING: This preview style depends on `is_empty_parameters_no_unnecessary_parentheses_around_return_value_enabled`
-/// because it relies on the new semantic of `IfBreaksParenthesized`.
-pub(crate) fn is_join_implicit_concatenated_string_enabled(context: &PyFormatContext) -> bool {
-    context.is_preview()
-}

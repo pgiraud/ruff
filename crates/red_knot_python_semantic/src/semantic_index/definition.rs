@@ -35,6 +35,7 @@ impl<'db> Definition<'db> {
         self.file_scope(db).to_scope_id(db, self.file(db))
     }
 
+    #[allow(unused)]
     pub(crate) fn category(self, db: &'db dyn Db) -> DefinitionCategory {
         self.kind(db).category()
     }

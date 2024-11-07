@@ -3394,7 +3394,10 @@ mod tests {
 
 #[cfg(test)]
 mod property_tests {
+    use crate::types::Type;
+
     use super::tests::{setup_db, Ty};
+    use crate::Db;
     use quickcheck::{Arbitrary, Gen};
     use quickcheck_macros::quickcheck;
 
@@ -3402,8 +3405,7 @@ mod property_tests {
         let int_lit = Ty::IntLiteral(i64::arbitrary(g));
         let bool_lit = Ty::BooleanLiteral(bool::arbitrary(g));
         g.choose(&[
-            // Disabled for now, since it triggers many failures below with types like `tuple[Never]`
-            // Ty::Never,
+            Ty::Never,
             Ty::Unknown,
             Ty::None,
             Ty::Any,
@@ -3432,7 +3434,7 @@ mod property_tests {
         if size == 0 {
             arbitrary_core_type(g)
         } else {
-            match u32::arbitrary(g) % 3 {
+            match u32::arbitrary(g) % 4 {
                 0 => arbitrary_core_type(g),
                 1 => Ty::Union(
                     (0..*g.choose(&[2, 3]).unwrap())
@@ -3444,15 +3446,14 @@ mod property_tests {
                         .map(|_| arbitrary_type(g, size - 1))
                         .collect(),
                 ),
-                // Currently disabled, as they easily generate `Never`
-                // 3 => Ty::Intersection {
-                //     pos: (0..*g.choose(&[0, 1, 2, 3]).unwrap())
-                //         .map(|_| arbitrary_type(g, size - 1))
-                //         .collect(),
-                //     neg: (0..*g.choose(&[0, 1, 2, 3]).unwrap())
-                //         .map(|_| arbitrary_type(g, size - 1))
-                //         .collect(),
-                // },
+                3 => Ty::Intersection {
+                    pos: (0..*g.choose(&[0, 1, 2, 3]).unwrap())
+                        .map(|_| arbitrary_type(g, size - 1))
+                        .collect(),
+                    neg: (0..*g.choose(&[0, 1, 2, 3]).unwrap())
+                        .map(|_| arbitrary_type(g, size - 1))
+                        .collect(),
+                },
                 _ => unreachable!(),
             }
         }
@@ -3461,6 +3462,21 @@ mod property_tests {
     impl Arbitrary for Ty {
         fn arbitrary(g: &mut Gen) -> Ty {
             arbitrary_type(g, 2)
+        }
+    }
+
+    impl<'db> Type<'db> {
+        fn contains_never(&self, db: &'db dyn Db) -> bool {
+            match self {
+                Type::Never => true,
+                Type::Union(types) => types.elements(db).iter().any(|t| t.contains_never(db)),
+                Type::Tuple(types) => types.elements(db).iter().any(|t| t.contains_never(db)),
+                Type::Intersection(inner) => {
+                    inner.positive(db).iter().any(|t| t.contains_never(db))
+                        || inner.negative(db).iter().any(|t| t.contains_never(db))
+                }
+                _ => false,
+            }
         }
     }
 
@@ -3506,7 +3522,7 @@ mod property_tests {
         let db = setup_db();
         let t = t.into_type(&db);
 
-        t.is_never() || !t.is_disjoint_from(&db, t)
+        t.contains_never(&db) || !t.is_disjoint_from(&db, t)
     }
 
     #[quickcheck]
@@ -3525,7 +3541,7 @@ mod property_tests {
         let t1 = t1.into_type(&db);
         let t2 = t2.into_type(&db);
 
-        if t1.is_never() {
+        if t1.contains_never(&db) {
             return true;
         }
 

@@ -2818,7 +2818,7 @@ mod tests {
         assert_eq!(size_of::<Type>(), 16);
     }
 
-    fn setup_db() -> TestDb {
+    pub(crate) fn setup_db() -> TestDb {
         let db = TestDb::new();
 
         let src_root = SystemPathBuf::from("/src");
@@ -2840,8 +2840,8 @@ mod tests {
 
     /// A test representation of a type that can be transformed unambiguously into a real Type,
     /// given a db.
-    #[derive(Debug, Clone)]
-    enum Ty {
+    #[derive(Debug, Clone, PartialEq)]
+    pub(crate) enum Ty {
         Never,
         Unknown,
         None,
@@ -2865,7 +2865,7 @@ mod tests {
     }
 
     impl Ty {
-        fn into_type(self, db: &TestDb) -> Type<'_> {
+        pub(crate) fn into_type(self, db: &TestDb) -> Type<'_> {
             match self {
                 Ty::Never => Type::Never,
                 Ty::Unknown => Type::Unknown,
@@ -3389,5 +3389,157 @@ mod tests {
         assert_function_query_was_not_run(&db, infer_expression_types, foo_call, &events);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use super::tests::{setup_db, Ty};
+    use quickcheck::{Arbitrary, Gen};
+    use quickcheck_macros::quickcheck;
+
+    impl Arbitrary for Ty {
+        fn arbitrary(g: &mut Gen) -> Ty {
+            match u32::arbitrary(g) % 33 {
+                0 => Ty::Never,
+                1 => Ty::Unknown,
+                2 => Ty::None,
+                3 => Ty::Any,
+                4 => Ty::Todo,
+                5 => Ty::IntLiteral(i64::arbitrary(g)),
+                6 => Ty::BooleanLiteral(bool::arbitrary(g)),
+                7 => Ty::StringLiteral(""),
+                8 => Ty::StringLiteral("a"),
+                9 => Ty::LiteralString,
+                10 => Ty::BytesLiteral(""),
+                11 => Ty::BytesLiteral("a"),
+                12 => Ty::BytesLiteral("aa"),
+                13 => Ty::BytesLiteral("\x00"),
+                14 => Ty::BuiltinInstance("str"),
+                15 => Ty::BuiltinInstance("int"),
+                16 => Ty::BuiltinInstance("bool"),
+                17 => Ty::BuiltinInstance("object"),
+                18 => Ty::BuiltinClassLiteral("str"),
+                19 => Ty::BuiltinClassLiteral("int"),
+                20 => Ty::BuiltinClassLiteral("bool"),
+                21 => Ty::BuiltinClassLiteral("object"),
+                22 => Ty::Union(vec![
+                    Ty::IntLiteral(i64::arbitrary(g)),
+                    Ty::IntLiteral(i64::arbitrary(g)),
+                ]),
+                23 => Ty::Union(vec![
+                    Ty::IntLiteral(i64::arbitrary(g)),
+                    Ty::IntLiteral(i64::arbitrary(g)),
+                    Ty::IntLiteral(i64::arbitrary(g)),
+                ]),
+                24 => Ty::Union(vec![Ty::BuiltinInstance("int"), Ty::None]),
+                25 => Ty::Union(vec![Ty::IntLiteral(1), Ty::BuiltinInstance("str")]),
+                26 => Ty::Intersection {
+                    pos: vec![Ty::BuiltinInstance("int")],
+                    neg: vec![Ty::IntLiteral(i64::arbitrary(g))],
+                },
+                27 => Ty::Intersection {
+                    pos: vec![Ty::BuiltinInstance("str")],
+                    neg: vec![Ty::StringLiteral("a")],
+                },
+                28 => Ty::Tuple(vec![]),
+                29 => Ty::Tuple(vec![Ty::IntLiteral(i64::arbitrary(g))]),
+                30 => Ty::Tuple(vec![
+                    Ty::IntLiteral(i64::arbitrary(g)),
+                    Ty::IntLiteral(i64::arbitrary(g)),
+                ]),
+                31 => Ty::Tuple(vec![Ty::BuiltinInstance("str"), Ty::BuiltinInstance("str")]),
+                32 => Ty::Tuple(vec![Ty::BuiltinInstance("str"), Ty::BuiltinInstance("int")]),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[quickcheck]
+    fn equivalent_to_is_reflexive(t: Ty) -> bool {
+        let db = setup_db();
+        let t = t.into_type(&db);
+
+        t.is_equivalent_to(&db, t)
+    }
+
+    #[quickcheck]
+    fn subtype_of_is_reflexive(t: Ty) -> bool {
+        let db = setup_db();
+        let t = t.into_type(&db);
+
+        t.is_subtype_of(&db, t)
+    }
+
+    #[quickcheck]
+    fn subtype_of_is_antisymmetric(t1: Ty, t2: Ty) -> bool {
+        let db = setup_db();
+
+        let t1 = t1.into_type(&db);
+        let t2 = t2.into_type(&db);
+
+        !(t1.is_subtype_of(&db, t2) && t2.is_subtype_of(&db, t1)) || (t1 == t2)
+    }
+
+    #[quickcheck]
+    fn subtype_of_is_transitive(t1: Ty, t2: Ty, t3: Ty) -> bool {
+        let db = setup_db();
+
+        let t1 = t1.into_type(&db);
+        let t2 = t2.into_type(&db);
+        let t3 = t3.into_type(&db);
+
+        !(t1.is_subtype_of(&db, t2) && t2.is_subtype_of(&db, t3)) || t1.is_subtype_of(&db, t3)
+    }
+
+    #[quickcheck]
+    fn disjoint_from_is_irreflexive(t: Ty) -> bool {
+        if t == Ty::Never {
+            return true;
+        }
+
+        let db = setup_db();
+        let t = t.into_type(&db);
+
+        !t.is_disjoint_from(&db, t)
+    }
+
+    #[quickcheck]
+    fn disjoint_from_is_symmetric(t1: Ty, t2: Ty) -> bool {
+        let db = setup_db();
+        let t1 = t1.into_type(&db);
+        let t2 = t2.into_type(&db);
+
+        t1.is_disjoint_from(&db, t2) == t2.is_disjoint_from(&db, t1)
+    }
+
+    #[quickcheck]
+    fn subtype_of_implies_not_disjoint_from(t1: Ty, t2: Ty) -> bool {
+        if t1 == Ty::Never {
+            return true;
+        }
+
+        let db = setup_db();
+
+        let t1 = t1.into_type(&db);
+        let t2 = t2.into_type(&db);
+
+        !t1.is_subtype_of(&db, t2) || !t1.is_disjoint_from(&db, t2)
+    }
+
+    #[quickcheck]
+    fn assignable_to_is_reflexive(t: Ty) -> bool {
+        let db = setup_db();
+        let t = t.into_type(&db);
+
+        t.is_assignable_to(&db, t)
+    }
+
+    #[quickcheck]
+    fn singleton_implies_single_valued(t: Ty) -> bool {
+        let db = setup_db();
+        let t = t.into_type(&db);
+
+        !t.is_singleton(&db) || t.is_single_valued(&db)
     }
 }

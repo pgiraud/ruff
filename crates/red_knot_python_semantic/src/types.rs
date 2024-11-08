@@ -3409,7 +3409,6 @@ mod property_tests {
             Ty::Unknown,
             Ty::None,
             Ty::Any,
-            Ty::Todo,
             int_lit,
             bool_lit,
             Ty::StringLiteral(""),
@@ -3462,6 +3461,16 @@ mod property_tests {
     impl Arbitrary for Ty {
         fn arbitrary(g: &mut Gen) -> Ty {
             arbitrary_type(g, 2)
+        }
+
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+            // This is incredibly naive
+            match self.clone() {
+                Ty::Union(types) => Box::new(types.into_iter()),
+                Ty::Tuple(types) => Box::new(types.into_iter()),
+                Ty::Intersection { pos, neg } => Box::new(pos.into_iter().chain(neg)),
+                _ => Box::new(std::iter::empty()),
+            }
         }
     }
 
@@ -3554,6 +3563,16 @@ mod property_tests {
         let t = t.into_type(&db);
 
         t.is_assignable_to(&db, t)
+    }
+
+    #[quickcheck]
+    fn subtype_of_implies_assignable_to(t1: Ty, t2: Ty) -> bool {
+        let db = setup_db();
+
+        let t1 = t1.into_type(&db);
+        let t2 = t2.into_type(&db);
+
+        !t1.is_subtype_of(&db, t2) || t1.is_assignable_to(&db, t2)
     }
 
     #[quickcheck]

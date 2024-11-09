@@ -3512,7 +3512,7 @@ mod property_tests {
         let t1 = t1.into_type(&db);
         let t2 = t2.into_type(&db);
 
-        !(t1.is_subtype_of(&db, t2) && t2.is_subtype_of(&db, t1)) || (t1 == t2)
+        !(t1.is_subtype_of(&db, t2) && t2.is_subtype_of(&db, t1)) || (t1.is_equivalent_to(&db, t2))
     }
 
     #[quickcheck]
@@ -3584,7 +3584,7 @@ mod property_tests {
     }
 
     #[quickcheck]
-    #[ignore]
+    #[ignore] // Produces too many false positives at the moment
     fn double_negation_is_identity(t: Ty) -> bool {
         let db = setup_db();
         let t = t.into_type(&db);

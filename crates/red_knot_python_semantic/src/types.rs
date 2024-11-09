@@ -3394,15 +3394,18 @@ mod tests {
 
 #[cfg(test)]
 mod property_tests {
+    use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+
     use crate::types::Type;
 
     use super::tests::{setup_db, Ty};
+    use crate::db::tests::TestDb;
     use crate::Db;
     use quickcheck::{Arbitrary, Gen};
     use quickcheck_macros::quickcheck;
 
     fn arbitrary_core_type(g: &mut Gen) -> Ty {
-        let int_lit = Ty::IntLiteral(i64::arbitrary(g));
+        let int_lit = Ty::IntLiteral(*g.choose(&[-2, -1, 0, 1, 2]).unwrap());
         let bool_lit = Ty::BooleanLiteral(bool::arbitrary(g));
         g.choose(&[
             Ty::Never,
@@ -3489,106 +3492,114 @@ mod property_tests {
         }
     }
 
+    static CACHED_DB: OnceLock<Arc<Mutex<TestDb>>> = OnceLock::new();
+
+    fn get_cached_db() -> MutexGuard<'static, TestDb> {
+        let db = CACHED_DB.get_or_init(|| Arc::new(Mutex::new(setup_db())));
+        db.lock().unwrap()
+    }
+
     #[quickcheck]
     fn equivalent_to_is_reflexive(t: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
         let t = t.into_type(&db);
 
-        t.is_equivalent_to(&db, t)
+        t.is_equivalent_to(&*db, t)
     }
 
     #[quickcheck]
     fn subtype_of_is_reflexive(t: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
         let t = t.into_type(&db);
 
-        t.is_subtype_of(&db, t)
+        t.is_subtype_of(&*db, t)
     }
 
     #[quickcheck]
     fn subtype_of_is_antisymmetric(t1: Ty, t2: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
 
         let t1 = t1.into_type(&db);
         let t2 = t2.into_type(&db);
 
-        !(t1.is_subtype_of(&db, t2) && t2.is_subtype_of(&db, t1)) || (t1.is_equivalent_to(&db, t2))
+        !(t1.is_subtype_of(&*db, t2) && t2.is_subtype_of(&*db, t1))
+            || (t1.is_equivalent_to(&*db, t2))
     }
 
     #[quickcheck]
     fn subtype_of_is_transitive(t1: Ty, t2: Ty, t3: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
 
         let t1 = t1.into_type(&db);
         let t2 = t2.into_type(&db);
         let t3 = t3.into_type(&db);
 
-        !(t1.is_subtype_of(&db, t2) && t2.is_subtype_of(&db, t3)) || t1.is_subtype_of(&db, t3)
+        !(t1.is_subtype_of(&*db, t2) && t2.is_subtype_of(&*db, t3)) || t1.is_subtype_of(&*db, t3)
     }
 
     #[quickcheck]
     fn disjoint_from_is_irreflexive(t: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
         let t = t.into_type(&db);
 
-        t.contains_never(&db) || !t.is_disjoint_from(&db, t)
+        t.contains_never(&*db) || !t.is_disjoint_from(&*db, t)
     }
 
     #[quickcheck]
     fn disjoint_from_is_symmetric(t1: Ty, t2: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
         let t1 = t1.into_type(&db);
         let t2 = t2.into_type(&db);
 
-        t1.is_disjoint_from(&db, t2) == t2.is_disjoint_from(&db, t1)
+        t1.is_disjoint_from(&*db, t2) == t2.is_disjoint_from(&*db, t1)
     }
 
     #[quickcheck]
     fn subtype_of_implies_not_disjoint_from(t1: Ty, t2: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
 
         let t1 = t1.into_type(&db);
         let t2 = t2.into_type(&db);
 
-        if t1.contains_never(&db) {
+        if t1.contains_never(&*db) {
             return true;
         }
 
-        !t1.is_subtype_of(&db, t2) || !t1.is_disjoint_from(&db, t2)
+        !t1.is_subtype_of(&*db, t2) || !t1.is_disjoint_from(&*db, t2)
     }
 
     #[quickcheck]
     fn assignable_to_is_reflexive(t: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
         let t = t.into_type(&db);
 
-        t.is_assignable_to(&db, t)
+        t.is_assignable_to(&*db, t)
     }
 
     #[quickcheck]
     fn subtype_of_implies_assignable_to(t1: Ty, t2: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
 
         let t1 = t1.into_type(&db);
         let t2 = t2.into_type(&db);
 
-        !t1.is_subtype_of(&db, t2) || t1.is_assignable_to(&db, t2)
+        !t1.is_subtype_of(&*db, t2) || t1.is_assignable_to(&*db, t2)
     }
 
     #[quickcheck]
     fn singleton_implies_single_valued(t: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
         let t = t.into_type(&db);
 
-        !t.is_singleton(&db) || t.is_single_valued(&db)
+        !t.is_singleton(&*db) || t.is_single_valued(&*db)
     }
 
     #[quickcheck]
     #[ignore] // Produces too many false positives at the moment
     fn double_negation_is_identity(t: Ty) -> bool {
-        let db = setup_db();
+        let db = get_cached_db();
         let t = t.into_type(&db);
 
-        t.negate(&db).negate(&db).is_equivalent_to(&db, t)
+        t.negate(&*db).negate(&*db).is_equivalent_to(&*db, t)
     }
 }

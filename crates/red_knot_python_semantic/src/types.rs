@@ -3582,4 +3582,13 @@ mod property_tests {
 
         !t.is_singleton(&db) || t.is_single_valued(&db)
     }
+
+    #[quickcheck]
+    #[ignore]
+    fn double_negation_is_identity(t: Ty) -> bool {
+        let db = setup_db();
+        let t = t.into_type(&db);
+
+        t.negate(&db).negate(&db).is_equivalent_to(&db, t)
+    }
 }

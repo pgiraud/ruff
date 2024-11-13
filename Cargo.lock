@@ -2367,7 +2367,6 @@ dependencies = [
  "rustc-hash 2.0.0",
  "salsa",
  "serde",
- "serde_with",
  "tempfile",
  "thiserror 2.0.3",
  "toml",

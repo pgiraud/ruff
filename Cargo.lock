@@ -2354,6 +2354,7 @@ dependencies = [
  "anyhow",
  "crossbeam",
  "glob",
+ "insta",
  "notify",
  "pep440_rs 0.7.2",
  "rayon",

@@ -15,8 +15,8 @@ license.workspace = true
 red_knot_python_semantic = { workspace = true }
 
 ruff_cache = { workspace = true }
-ruff_db = { workspace = true, features = ["os", "cache"] }
-ruff_python_ast = { workspace = true }
+ruff_db = { workspace = true, features = ["os", "cache", "serde"] }
+ruff_python_ast = { workspace = true, features = ["serde"] }
 ruff_text_size = { workspace = true }
 red_knot_vendored = { workspace = true }
 
@@ -35,8 +35,9 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 ruff_db = { workspace = true, features = ["testing"] }
-insta = { workspace = true, features = ["filters"] }
-regex = { workspace = true }
+red_knot_python_semantic = { workspace = true, features = ["serde"] }
+
+insta = { workspace = true, features = ["filters", "redactions", "ron"] }
 tempfile = { workspace = true }
 
 [features]
